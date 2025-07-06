@@ -1,7 +1,9 @@
 import json
 import numpy as np
 import time
+import tracemalloc
 from dp_solver import solve_knapsack_dp_discretized
+from dp_solver_memory_optimized import solve_knapsack_dp_discretized_memory_optimized
 
 # --- Helper function to calculate total volume of selected items ---
 def calculate_total_volume(items_data: list, selected_ids: list) -> float:
@@ -225,7 +227,7 @@ def solve_knapsack_backtrack(
 # --- Main Execution ---
 if __name__ == "__main__":
     # Define backpack capacity
-    BACKPACK_CAPACITY = 40.0 # liters
+    BACKPACK_CAPACITY = 1000.0 # liters
 
     # --- Step 1: Load Data ---
     packages_file = 'packages.json'
@@ -278,81 +280,86 @@ if __name__ == "__main__":
     items_data_sorted_for_knapsack = sorted(items_data, key=lambda x: x.get('value_per_volume', 0), reverse=True)
 
 
-    # --- Step 3: Solve the Knapsack Problem using Backtracking ---
-    print(f"\n--- Solving Knapsack Problem ---")
-    print(f"Backpack Capacity: {BACKPACK_CAPACITY} liters")
-    print(f"Number of items to consider (from items.json): {len(items_data_sorted_for_knapsack)}")
-
-    # Reset global variables before starting the backtracking process
-    MAX_PRICE = -1.0
-    BEST_SELECTION_IDS = []
-
-    # Start the backtracking process from the first item (index 0).
-    solve_knapsack_backtrack(
-        items_list=items_data_sorted_for_knapsack,
-        capacity=BACKPACK_CAPACITY,
-        current_index=0,
-        current_volume=0.0,
-        current_price=0.0,
-        current_selection_indices=[] # Start with an empty selection
-    )
-
-    print(f"\n--- Best Gift Choices for Sergey's Birthday ---")
-    print(f"Maximum Total Price Achieved: {MAX_PRICE:.2f} Euros")
-    print(f"Selected Item IDs: {BEST_SELECTION_IDS}")
-
-    # Display details of the selected items and their total volume
-    selected_items_details = []
-    total_selected_volume = 0.0
-    total_selected_price = 0.0 
-    for item_id in BEST_SELECTION_IDS:
-        # Find the item in the original (unsorted) items_data for display purposes
-        found_item = next((item for item in items_data if item['name'] == item_id), None)
-        if found_item:
-            selected_items_details.append(found_item)
-            total_selected_volume += found_item['volume']
-            total_selected_price += found_item['price'] 
-
-    print("\nDetails of Selected Items:")
-    if not selected_items_details:
-        print("  No items selected (perhaps capacity too small or no profitable items).")
-    for item in selected_items_details:
-        print(f"  - Name: {item['name']}, Price: {item['price']:.2f}€, Est. Volume: {item['volume']:.2f}L (ID: {item['name']})")
-    print(f"\nTotal Volume of Selected Items: {total_selected_volume:.2f} liters (Max Capacity: {BACKPACK_CAPACITY}L)")
-    print(f"Total Price of Selected Items (for verification): {total_selected_price:.2f} Euros")
+    # # --- Step 3: Solve the Knapsack Problem using Backtracking ---
+    # print(f"\n--- Solving Knapsack Problem ---")
+    # print(f"Backpack Capacity: {BACKPACK_CAPACITY} liters")
+    # print(f"Number of items to consider (from items.json): {len(items_data_sorted_for_knapsack)}")
+    #
+    # # Reset global variables before starting the backtracking process
+    # MAX_PRICE = -1.0
+    # BEST_SELECTION_IDS = []
+    #
+    # # Start the backtracking process from the first item (index 0).
+    # solve_knapsack_backtrack(
+    #     items_list=items_data_sorted_for_knapsack,
+    #     capacity=BACKPACK_CAPACITY,
+    #     current_index=0,
+    #     current_volume=0.0,
+    #     current_price=0.0,
+    #     current_selection_indices=[] # Start with an empty selection
+    # )
+    #
+    # print(f"\n--- Best Gift Choices for Sergey's Birthday ---")
+    # print(f"Maximum Total Price Achieved: {MAX_PRICE:.2f} Euros")
+    # print(f"Selected Item IDs: {BEST_SELECTION_IDS}")
+    #
+    # # Display details of the selected items and their total volume
+    # selected_items_details = []
+    # total_selected_volume = 0.0
+    # total_selected_price = 0.0
+    # for item_id in BEST_SELECTION_IDS:
+    #     # Find the item in the original (unsorted) items_data for display purposes
+    #     found_item = next((item for item in items_data if item['name'] == item_id), None)
+    #     if found_item:
+    #         selected_items_details.append(found_item)
+    #         total_selected_volume += found_item['volume']
+    #         total_selected_price += found_item['price']
+    #
+    # print("\nDetails of Selected Items:")
+    # if not selected_items_details:
+    #     print("  No items selected (perhaps capacity too small or no profitable items).")
+    # for item in selected_items_details:
+    #     print(f"  - Name: {item['name']}, Price: {item['price']:.2f}€, Est. Volume: {item['volume']:.2f}L (ID: {item['name']})")
+    # print(f"\nTotal Volume of Selected Items: {total_selected_volume:.2f} liters (Max Capacity: {BACKPACK_CAPACITY}L)")
+    # print(f"Total Price of Selected Items (for verification): {total_selected_price:.2f} Euros")
 
 
     # === BENCHMARKS ===
     print(f"\n--- Benchmarking Algorithms ---")
 
-    # Backtracking
-    MAX_PRICE = -1.0
-    BEST_SELECTION_IDS = []
-    start_bt = time.perf_counter()
-    solve_knapsack_backtrack(
-        items_list=items_data_sorted_for_knapsack,
-        capacity=BACKPACK_CAPACITY,
-        current_index=0,
-        current_volume=0.0,
-        current_price=0.0,
-        current_selection_indices=[]
-    )
-    end_bt = time.perf_counter()
-    print(f"\nBacktracking:")
-    print(f"  Max Price: {MAX_PRICE:.2f} EUR")
-    print(f"  Time: {end_bt - start_bt:.3f} sec")
-    print(f"  Items: {BEST_SELECTION_IDS}")
-    volume_bt = calculate_total_volume(items_data, BEST_SELECTION_IDS)
-    print(f"  Total Volume: {volume_bt:.2f}L / {BACKPACK_CAPACITY}L")
+    # # Backtracking
+    # MAX_PRICE = -1.0
+    # BEST_SELECTION_IDS = []
+    # start_bt = time.perf_counter()
+    # solve_knapsack_backtrack(
+    #     items_list=items_data_sorted_for_knapsack,
+    #     capacity=BACKPACK_CAPACITY,
+    #     current_index=0,
+    #     current_volume=0.0,
+    #     current_price=0.0,
+    #     current_selection_indices=[]
+    # )
+    # end_bt = time.perf_counter()
+    # print(f"\nBacktracking:")
+    # print(f"  Max Price: {MAX_PRICE:.2f} EUR")
+    # print(f"  Time: {end_bt - start_bt:.3f} sec")
+    # print(f"  Items: {BEST_SELECTION_IDS}")
+    # volume_bt = calculate_total_volume(items_data, BEST_SELECTION_IDS)
+    # print(f"  Total Volume: {volume_bt:.2f}L / {BACKPACK_CAPACITY}L")
 
     # Dynamic Programming with discretized volumes
+    tracemalloc.start()
     start_dp = time.perf_counter()
+
     dp_result = solve_knapsack_dp_discretized(
         items_list=items_data_sorted_for_knapsack,
         capacity=BACKPACK_CAPACITY,
         precision=2
     )
+
     end_dp = time.perf_counter()
+    current_mem_dp, peak_mem_dp = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
 
     print(f"\nDynamic Programming (discretized):")
     print(f"  Max Price: {dp_result['total_price']:.2f} EUR")
@@ -360,3 +367,26 @@ if __name__ == "__main__":
     print(f"  Items: {dp_result['selected_items']}")
     volume_dp = calculate_total_volume(items_data, dp_result['selected_items'])
     print(f"  Total Volume: {volume_dp:.2f}L / {BACKPACK_CAPACITY}L")
+    print(f"  Memory Usage: Current = {current_mem_dp / 1024:.2f} KB; Peak = {peak_mem_dp / 1024:.2f} KB")
+
+    # Dynamic Programming with discretized volumes (memory optimized)
+    tracemalloc.start()
+    start_dp_opt = time.perf_counter()
+
+    dp_opt_result = solve_knapsack_dp_discretized_memory_optimized(
+        items_list=items_data_sorted_for_knapsack,
+        capacity=BACKPACK_CAPACITY,
+        precision=2
+    )
+
+    end_dp_opt = time.perf_counter()
+    current_mem_opt, peak_mem_opt = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    print(f"\nDynamic Programming (optimized):")
+    print(f"  Max Price: {dp_opt_result['total_price']:.2f} EUR")
+    print(f"  Time: {end_dp_opt - start_dp_opt:.3f} sec")
+    print(f"  Items: {dp_opt_result['selected_items']}")
+    volume_dp_opt = calculate_total_volume(items_data, dp_opt_result['selected_items'])
+    print(f"  Total Volume: {volume_dp_opt:.2f}L / {BACKPACK_CAPACITY}L")
+    print(f"  Memory Usage: Current = {current_mem_opt / 1024:.2f} KB; Peak = {peak_mem_opt / 1024:.2f} KB")

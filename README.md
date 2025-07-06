@@ -115,3 +115,40 @@ Here’s a quick benchmark:
 
 My version does **not** change the original logic or data. I only added a separate DP implementation (`dp_solver.py`) and benchmarked both methods on the same input. This experiment is just to see how scalable the solution can become.
 Total Volume: 40.00L / 40.0L
+
+---
+
+## UPDATED 2.0 – Optimized Dynamic Programming
+
+In this updated version, the dynamic programming algorithm has been reworked to significantly improve **space** and **execution time** efficiency.
+
+#### Key Improvements:
+- **Space Complexity reduced** from `O(n · C)` to `O(C)`,  
+  where `n` is the number of items and `C` is the scaled capacity of the backpack (based on decimal precision).
+- **Time performance improved** due to:
+  - Replacing the 2D DP matrix with a 1D DP array.
+  - Iterating over the capacity in **reverse order**, which ensures correct overwriting of previous states without interference.
+  - Eliminating redundant memory allocations and lookups.
+
+This optimization maintains the same algorithmic complexity:
+
+| Metric            | Before               | After (Optimized)      |
+|-------------------|----------------------|-------------------------|
+| Time Complexity   | O(n · C)             | O(n · C)                |
+| Space Complexity  | O(n · C)             | O(C)                    |
+
+However, **the runtime improves noticeably** in practice due to better cache locality, fewer allocations, and reduced overhead during iteration.
+
+#### Benchmark Results
+> Benchmarks were performed with:
+> - Backpack capacity: **1000 liters**
+> - Number of items: **100**
+
+| Algorithm                     | Max Price (EUR) | Time (sec) | Total Volume (L) | Peak Memory (MB) |
+|------------------------------|------------------|-------------|-------------------|------------------|
+| DP (discretized)             | 6251.00          | 21.174      | 998.74 / 1000.0   | 229.04           |
+| DP (optimized)               | 6251.00          | 12.591      | 998.74 / 1000.0   | 3.91             |
+
+> **Note:** The backtracking solution was excluded from benchmarking because for capacities over 40 and item counts over 60, the required runtime grows exponentially, making it practically infeasible to run.
+
+Both dynamic programming variants produced **identical solutions** (same items and total price), validating correctness. However, the optimized version required **~98% less memory** and executed **~40% faster**.
