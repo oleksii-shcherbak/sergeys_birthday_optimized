@@ -239,4 +239,165 @@
         "name": "A60",
         "price": 76
     }
+    ,
+    {
+        "name": "A61",
+        "price": 34
+    },
+    {
+        "name": "A62",
+        "price": 82
+    },
+    {
+        "name": "A63",
+        "price": 29
+    },
+    {
+        "name": "A64",
+        "price": 58
+    },
+    {
+        "name": "A65",
+        "price": 88
+    },
+    {
+        "name": "A66",
+        "price": 104
+    },
+    {
+        "name": "A67",
+        "price": 31
+    },
+    {
+        "name": "A68",
+        "price": 35
+    },
+    {
+        "name": "A69",
+        "price": 27
+    },
+    {
+        "name": "A70",
+        "price": 30
+    },
+    {
+        "name": "A71",
+        "price": 116
+    },
+    {
+        "name": "A72",
+        "price": 82
+    },
+    {
+        "name": "A73",
+        "price": 29
+    },
+    {
+        "name": "A74",
+        "price": 54
+    },
+    {
+        "name": "A75",
+        "price": 99
+    },
+    {
+        "name": "A76",
+        "price": 64
+    },
+    {
+        "name": "A77",
+        "price": 21
+    },
+    {
+        "name": "A78",
+        "price": 45
+    },
+    {
+        "name": "A79",
+        "price": 80
+    },
+    {
+        "name": "A80",
+        "price": 53
+    },
+    {
+        "name": "A81",
+        "price": 116
+    },
+    {
+        "name": "A82",
+        "price": 86
+    },
+    {
+        "name": "A83",
+        "price": 27
+    },
+    {
+        "name": "A84",
+        "price": 115
+    },
+    {
+        "name": "A85",
+        "price": 116
+    },
+    {
+        "name": "A86",
+        "price": 31
+    },
+    {
+        "name": "A87",
+        "price": 114
+    },
+    {
+        "name": "A88",
+        "price": 107
+    },
+    {
+        "name": "A89",
+        "price": 62
+    },
+    {
+        "name": "A90",
+        "price": 21
+    },
+    {
+        "name": "A91",
+        "price": 76
+    },
+    {
+        "name": "A92",
+        "price": 87
+    },
+    {
+        "name": "A93",
+        "price": 91
+    },
+    {
+        "name": "A94",
+        "price": 30
+    },
+    {
+        "name": "A95",
+        "price": 81
+    },
+    {
+        "name": "A96",
+        "price": 119
+    },
+    {
+        "name": "A97",
+        "price": 64
+    },
+    {
+        "name": "A98",
+        "price": 29
+    },
+    {
+        "name": "A99",
+        "price": 62
+    },
+    {
+        "name": "A100",
+        "price": 44
+    }
 ]

@@ -1,5 +1,22 @@
 import json
 import numpy as np
+import time
+from dp_solver import solve_knapsack_dp_discretized
+
+# --- Helper function to calculate total volume of selected items ---
+def calculate_total_volume(items_data: list, selected_ids: list) -> float:
+    """
+    Calculates total volume for selected item names.
+
+    Args:
+        items_data: List of item dictionaries with 'name' and 'volume'.
+        selected_ids: List of item names selected by the algorithm.
+
+    Returns:
+        float: Total volume in liters.
+    """
+    id_to_item = {item["name"]: item for item in items_data}
+    return sum(id_to_item[item_id]["volume"] for item_id in selected_ids if item_id in id_to_item)
 
 # --- Helper function for JSON loading ---
 def load_json_data(file_path: str):
@@ -303,3 +320,43 @@ if __name__ == "__main__":
         print(f"  - Name: {item['name']}, Price: {item['price']:.2f}€, Est. Volume: {item['volume']:.2f}L (ID: {item['name']})")
     print(f"\nTotal Volume of Selected Items: {total_selected_volume:.2f} liters (Max Capacity: {BACKPACK_CAPACITY}L)")
     print(f"Total Price of Selected Items (for verification): {total_selected_price:.2f} Euros")
+
+
+    # === BENCHMARKS ===
+    print(f"\n--- Benchmarking Algorithms ---")
+
+    # Backtracking
+    MAX_PRICE = -1.0
+    BEST_SELECTION_IDS = []
+    start_bt = time.perf_counter()
+    solve_knapsack_backtrack(
+        items_list=items_data_sorted_for_knapsack,
+        capacity=BACKPACK_CAPACITY,
+        current_index=0,
+        current_volume=0.0,
+        current_price=0.0,
+        current_selection_indices=[]
+    )
+    end_bt = time.perf_counter()
+    print(f"\nBacktracking:")
+    print(f"  Max Price: {MAX_PRICE:.2f} EUR")
+    print(f"  Time: {end_bt - start_bt:.3f} sec")
+    print(f"  Items: {BEST_SELECTION_IDS}")
+    volume_bt = calculate_total_volume(items_data, BEST_SELECTION_IDS)
+    print(f"  Total Volume: {volume_bt:.2f}L / {BACKPACK_CAPACITY}L")
+
+    # Dynamic Programming with discretized volumes
+    start_dp = time.perf_counter()
+    dp_result = solve_knapsack_dp_discretized(
+        items_list=items_data_sorted_for_knapsack,
+        capacity=BACKPACK_CAPACITY,
+        precision=2
+    )
+    end_dp = time.perf_counter()
+
+    print(f"\nDynamic Programming (discretized):")
+    print(f"  Max Price: {dp_result['total_price']:.2f} EUR")
+    print(f"  Time: {end_dp - start_dp:.3f} sec")
+    print(f"  Items: {dp_result['selected_items']}")
+    volume_dp = calculate_total_volume(items_data, dp_result['selected_items'])
+    print(f"  Total Volume: {volume_dp:.2f}L / {BACKPACK_CAPACITY}L")
