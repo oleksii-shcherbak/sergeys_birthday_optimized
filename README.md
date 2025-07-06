@@ -97,3 +97,21 @@ Details of Selected Items:
 
 Total Volume of Selected Items: 39.95 liters (Max Capacity: 40.0L)
 Total Price of Selected Items (for verification): 741.00 Euros
+
+---
+
+## UPDATED
+
+I forked this repository to explore how the solution could be improved when the number of items increases.
+
+The backtracking algorithm works well for small and medium input sizes, but becomes too slow on large ones. So I added an alternative approach using **dynamic programming**. It's much faster, but it only works with integers — so I had to **convert decimal volumes to integers** by discretizing them (e.g., multiplying by 100).
+
+Here’s a quick benchmark:
+
+| Algorithm              | Max Price (EUR) | Time (sec) | Total Volume Used (L) |
+|------------------------|------------------|-------------|-------------------------|
+| Backtracking           | 751.00           | 70.461      | 39.97 / 40.0            |
+| Dynamic Programming    | 757.00           | 0.010       | 40.00 / 40.0            |
+
+My version does **not** change the original logic or data. I only added a separate DP implementation (`dp_solver.py`) and benchmarked both methods on the same input. This experiment is just to see how scalable the solution can become.
+Total Volume: 40.00L / 40.0L
