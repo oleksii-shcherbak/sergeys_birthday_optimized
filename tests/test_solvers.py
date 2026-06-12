@@ -11,6 +11,7 @@ from backtracking_solver import solve_knapsack_backtracking
 from branch_and_bound_solver import solve_knapsack_branch_and_bound
 from dp_solver import solve_knapsack_dp_discretized
 from dp_solver_memory_optimized import solve_knapsack_dp_discretized_memory_optimized
+from dp_solver_numpy import solve_knapsack_dp_numpy
 
 # All solvers share the (items, capacity, precision) interface here.
 # The two float-volume solvers ignore precision.
@@ -19,9 +20,10 @@ ALL_SOLVERS = {
     'branch-and-bound': lambda items, cap, precision: solve_knapsack_branch_and_bound(items, cap),
     'dp': solve_knapsack_dp_discretized,
     'dp-optimized': solve_knapsack_dp_discretized_memory_optimized,
+    'dp-numpy': solve_knapsack_dp_numpy,
 }
 
-DP_SOLVERS = ['dp', 'dp-optimized']
+DP_SOLVERS = ['dp', 'dp-optimized', 'dp-numpy']
 
 
 @pytest.mark.parametrize('solver_name', ALL_SOLVERS)
