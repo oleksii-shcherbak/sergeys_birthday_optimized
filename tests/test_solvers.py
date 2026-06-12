@@ -37,3 +37,24 @@ def test_reconstruction_regression(solver_name):
                           if item['name'] in result['selected_items'])
     assert math.isclose(selection_price, result['total_price']), \
         f"selection adds up to {selection_price}, solver reported {result['total_price']}"
+
+
+@pytest.mark.parametrize('solver_name', DP_SOLVERS)
+def test_discretized_solution_fits_real_capacity(solver_name):
+    """
+    Rounding volumes to the nearest unit lets the DP pack a set whose true
+    volume exceeds the capacity: two 2.004 L items "fit" into 4 L after both
+    round down to 2.00. Volumes must be rounded up instead, so the returned
+    selection always truly fits.
+    """
+    items = [
+        {'name': 'A', 'price': 10, 'volume': 2.004},
+        {'name': 'B', 'price': 10, 'volume': 2.004},
+    ]
+    capacity = 4.0
+    result = DP_SOLVERS[solver_name](items, capacity, 2)
+
+    volume = sum(item['volume'] for item in items
+                 if item['name'] in result['selected_items'])
+    assert volume <= capacity + 1e-9
+    assert math.isclose(result['total_price'], 10.0)

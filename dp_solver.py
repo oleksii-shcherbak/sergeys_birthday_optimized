@@ -1,3 +1,6 @@
+import math
+
+
 def solve_knapsack_dp_discretized(items_list, capacity, precision=2):
     """
     Solves the 0/1 Knapsack problem using Dynamic Programming with discretized volumes.
@@ -14,11 +17,13 @@ def solve_knapsack_dp_discretized(items_list, capacity, precision=2):
         }
     """
     scale = 10 ** precision
-    int_capacity = int(round(capacity * scale))
+    int_capacity = int(math.floor(capacity * scale + 1e-9))
     n = len(items_list)
 
-    # Preprocess items: round volumes to integers
-    weights = [int(round(item['volume'] * scale)) for item in items_list]
+    # Round volumes UP and the capacity DOWN: rounding to nearest can select a set
+    # whose true volume slightly exceeds the capacity. The 1e-9 guard absorbs float
+    # noise like 8.0 * 100 == 800.0000000000002.
+    weights = [int(math.ceil(item['volume'] * scale - 1e-9)) for item in items_list]
     prices = [item['price'] for item in items_list]
     names = [item['name'] for item in items_list]
 

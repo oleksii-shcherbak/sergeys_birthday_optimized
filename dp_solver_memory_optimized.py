@@ -1,3 +1,6 @@
+import math
+
+
 def solve_knapsack_dp_discretized_memory_optimized(items_list, capacity, precision=2):
     """
     Solves the 0/1 Knapsack problem using Dynamic Programming with discretized volumes.
@@ -16,10 +19,12 @@ def solve_knapsack_dp_discretized_memory_optimized(items_list, capacity, precisi
         }
     """
     scale = 10 ** precision
-    int_capacity = int(round(capacity * scale))
+    int_capacity = int(math.floor(capacity * scale + 1e-9))
     n = len(items_list)
 
-    weights = [int(round(item['volume'] * scale)) for item in items_list]
+    # Round volumes UP and the capacity DOWN, so the returned selection is
+    # guaranteed to truly fit (see the same logic in dp_solver.py).
+    weights = [int(math.ceil(item['volume'] * scale - 1e-9)) for item in items_list]
     prices = [item['price'] for item in items_list]
     names = [item['name'] for item in items_list]
 
