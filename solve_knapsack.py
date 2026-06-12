@@ -148,82 +148,6 @@ def estimate_individual_item_volumes_bayesian(packages_data: list, all_item_ids:
     
     return estimated_volumes
 
-# --- Part 2: Backtracking Algorithm for Knapsack ---
-
-# Global variables to store the best solution found
-# These are modified by the recursive backtracking function.
-MAX_PRICE = -1.0
-BEST_SELECTION_IDS = []
-
-def solve_knapsack_backtrack(
-    items_list: list, 
-    capacity: float, 
-    current_index: int, 
-    current_volume: float, 
-    current_price: float, 
-    current_selection_indices: list
-):
-    """
-    Recursive backtracking function to solve the 0/1 Knapsack problem.
-    Updates the global MAX_PRICE and BEST_SELECTION_IDS.
-    
-    Args:
-        items_list: List of dictionaries, each with 'id', 'name', 'price', 'volume'.
-                    It's assumed 'volume' has been estimated and assigned.
-        capacity: The maximum volume the backpack can hold.
-        current_index: The index of the item currently being considered in items_list.
-        current_volume: The accumulated volume of items already selected in the current path.
-        current_price: The accumulated price of items already selected in the current path.
-        current_selection_indices: List of original indices of items selected in the current path.
-    """
-    global MAX_PRICE, BEST_SELECTION_IDS
-
-    # Pruning Condition 1: If current volume exceeds capacity, this path is invalid.
-    if current_volume > capacity:
-        return
-
-    # Base Case: All items have been considered
-    if current_index == len(items_list):
-        # If this complete solution is better than the best found so far, update it.
-        if current_price > MAX_PRICE:
-            MAX_PRICE = current_price
-            # Store the IDs of the selected items for the best solution.
-            BEST_SELECTION_IDS = [items_list[i]['name'] for i in current_selection_indices]
-        return
-
-    # Pruning Condition 2 (Optimization): Upper Bound Check
-    # This helps prune branches that cannot lead to a better solution.
-    # We calculate an optimistic upper bound by summing prices of all remaining items.
-    # If the current accumulated price plus all remaining prices is not enough to beat
-    # the current MAX_PRICE, then this path is not worth exploring further.
-    remaining_potential_price = sum(item['price'] for item in items_list[current_index:])
-    if current_price + remaining_potential_price <= MAX_PRICE:
-        return # Cannot beat the current max price, so prune this branch.
-
-    # --- Recursive Steps ---
-
-    # Option 1: Include the current item (items_list[current_index])
-    item_to_include = items_list[current_index]
-    solve_knapsack_backtrack(
-        items_list,
-        capacity,
-        current_index + 1,  # Move to the next item
-        current_volume + item_to_include['volume'],
-        current_price + item_to_include['price'],
-        current_selection_indices + [current_index] # Add current item's index to selection
-    )
-
-    # Option 2: Exclude the current item (items_list[current_index])
-    solve_knapsack_backtrack(
-        items_list,
-        capacity,
-        current_index + 1,  # Move to the next item
-        current_volume,     # Volume remains unchanged
-        current_price,      # Price remains unchanged
-        current_selection_indices # Selection remains unchanged
-    )
-
-
 # --- Main Execution ---
 if __name__ == "__main__":
     # Define backpack capacity
@@ -280,72 +204,8 @@ if __name__ == "__main__":
     items_data_sorted_for_knapsack = sorted(items_data, key=lambda x: x.get('value_per_volume', 0), reverse=True)
 
 
-    # # --- Step 3: Solve the Knapsack Problem using Backtracking ---
-    # print(f"\n--- Solving Knapsack Problem ---")
-    # print(f"Backpack Capacity: {BACKPACK_CAPACITY} liters")
-    # print(f"Number of items to consider (from items.json): {len(items_data_sorted_for_knapsack)}")
-    #
-    # # Reset global variables before starting the backtracking process
-    # MAX_PRICE = -1.0
-    # BEST_SELECTION_IDS = []
-    #
-    # # Start the backtracking process from the first item (index 0).
-    # solve_knapsack_backtrack(
-    #     items_list=items_data_sorted_for_knapsack,
-    #     capacity=BACKPACK_CAPACITY,
-    #     current_index=0,
-    #     current_volume=0.0,
-    #     current_price=0.0,
-    #     current_selection_indices=[] # Start with an empty selection
-    # )
-    #
-    # print(f"\n--- Best Gift Choices for Sergey's Birthday ---")
-    # print(f"Maximum Total Price Achieved: {MAX_PRICE:.2f} Euros")
-    # print(f"Selected Item IDs: {BEST_SELECTION_IDS}")
-    #
-    # # Display details of the selected items and their total volume
-    # selected_items_details = []
-    # total_selected_volume = 0.0
-    # total_selected_price = 0.0
-    # for item_id in BEST_SELECTION_IDS:
-    #     # Find the item in the original (unsorted) items_data for display purposes
-    #     found_item = next((item for item in items_data if item['name'] == item_id), None)
-    #     if found_item:
-    #         selected_items_details.append(found_item)
-    #         total_selected_volume += found_item['volume']
-    #         total_selected_price += found_item['price']
-    #
-    # print("\nDetails of Selected Items:")
-    # if not selected_items_details:
-    #     print("  No items selected (perhaps capacity too small or no profitable items).")
-    # for item in selected_items_details:
-    #     print(f"  - Name: {item['name']}, Price: {item['price']:.2f}€, Est. Volume: {item['volume']:.2f}L (ID: {item['name']})")
-    # print(f"\nTotal Volume of Selected Items: {total_selected_volume:.2f} liters (Max Capacity: {BACKPACK_CAPACITY}L)")
-    # print(f"Total Price of Selected Items (for verification): {total_selected_price:.2f} Euros")
-
-
     # === BENCHMARKS ===
     print(f"\n--- Benchmarking Algorithms ---")
-
-    # # Backtracking
-    # MAX_PRICE = -1.0
-    # BEST_SELECTION_IDS = []
-    # start_bt = time.perf_counter()
-    # solve_knapsack_backtrack(
-    #     items_list=items_data_sorted_for_knapsack,
-    #     capacity=BACKPACK_CAPACITY,
-    #     current_index=0,
-    #     current_volume=0.0,
-    #     current_price=0.0,
-    #     current_selection_indices=[]
-    # )
-    # end_bt = time.perf_counter()
-    # print(f"\nBacktracking:")
-    # print(f"  Max Price: {MAX_PRICE:.2f} EUR")
-    # print(f"  Time: {end_bt - start_bt:.3f} sec")
-    # print(f"  Items: {BEST_SELECTION_IDS}")
-    # volume_bt = calculate_total_volume(items_data, BEST_SELECTION_IDS)
-    # print(f"  Total Volume: {volume_bt:.2f}L / {BACKPACK_CAPACITY}L")
 
     # Dynamic Programming with discretized volumes
     tracemalloc.start()

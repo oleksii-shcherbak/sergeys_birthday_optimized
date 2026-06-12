@@ -7,16 +7,24 @@ import pytest
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_DIR)
 
+from backtracking_solver import solve_knapsack_backtracking
+from branch_and_bound_solver import solve_knapsack_branch_and_bound
 from dp_solver import solve_knapsack_dp_discretized
 from dp_solver_memory_optimized import solve_knapsack_dp_discretized_memory_optimized
 
-DP_SOLVERS = {
+# All solvers share the (items, capacity, precision) interface here.
+# The two float-volume solvers ignore precision.
+ALL_SOLVERS = {
+    'backtracking': lambda items, cap, precision: solve_knapsack_backtracking(items, cap),
+    'branch-and-bound': lambda items, cap, precision: solve_knapsack_branch_and_bound(items, cap),
     'dp': solve_knapsack_dp_discretized,
     'dp-optimized': solve_knapsack_dp_discretized_memory_optimized,
 }
 
+DP_SOLVERS = ['dp', 'dp-optimized']
 
-@pytest.mark.parametrize('solver_name', DP_SOLVERS)
+
+@pytest.mark.parametrize('solver_name', ALL_SOLVERS)
 def test_reconstruction_regression(solver_name):
     """
     Regression test for the selection reconstruction: item Z overwrites the dp
@@ -29,7 +37,7 @@ def test_reconstruction_regression(solver_name):
         {'name': 'Z', 'price': 4, 'volume': 2.0},
     ]
     capacity = 4.0
-    result = DP_SOLVERS[solver_name](items, capacity, 0)
+    result = ALL_SOLVERS[solver_name](items, capacity, 0)
 
     assert math.isclose(result['total_price'], 7.0)
     assert len(result['selected_items']) == 2
@@ -52,7 +60,7 @@ def test_discretized_solution_fits_real_capacity(solver_name):
         {'name': 'B', 'price': 10, 'volume': 2.004},
     ]
     capacity = 4.0
-    result = DP_SOLVERS[solver_name](items, capacity, 2)
+    result = ALL_SOLVERS[solver_name](items, capacity, 2)
 
     volume = sum(item['volume'] for item in items
                  if item['name'] in result['selected_items'])
