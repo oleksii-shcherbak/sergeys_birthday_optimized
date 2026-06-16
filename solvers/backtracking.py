@@ -1,4 +1,4 @@
-def solve_knapsack_backtracking(items_list, capacity):
+def solve(items_list, capacity):
     """
     The original recursive backtracking solution, kept as a baseline so the
     benchmarks against branch and bound stay reproducible. Items are considered
@@ -6,7 +6,7 @@ def solve_knapsack_backtracking(items_list, capacity):
     the sum of ALL remaining prices (the capacity is ignored) cannot beat the
     best price found so far. That bound is very weak, so the runtime grows
     exponentially: ~80 sec at 40 L / 100 items, practically infinite at 1000 L.
-    Use branch_and_bound_solver.py for real work.
+    Use branch_and_bound.py for real work.
 
     Args:
         items_list (list): List of items (dicts with 'name', 'price', 'volume').

@@ -1,252 +1,261 @@
-import json
-import numpy as np
+import argparse
+import math
+import multiprocessing
+import os
+import random
+import sys
 import time
 import tracemalloc
-from dp_solver import solve_knapsack_dp_discretized
-from dp_solver_memory_optimized import solve_knapsack_dp_discretized_memory_optimized
 
-# --- Helper function to calculate total volume of selected items ---
-def calculate_total_volume(items_data: list, selected_ids: list) -> float:
+from estimation import prepare_items
+from solvers import FAST_SOLVERS, SOLVERS
+
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def generate_items(count: int, seed: int = 0, correlation: float = 0.0) -> list:
     """
-    Calculates total volume for selected item names.
+    Generates a synthetic item set for benchmarking, with volumes in the same
+    range as the estimated real data (0.3-30 L, two decimals).
+
+    correlation=0 gives prices independent of volumes (easy for branch and
+    bound). correlation=1 makes price a near-linear function of volume — the
+    classic hard case for branch and bound, because all price/volume densities
+    become almost equal and the fractional bound stops discriminating.
 
     Args:
-        items_data: List of item dictionaries with 'name' and 'volume'.
-        selected_ids: List of item names selected by the algorithm.
+        count: Number of items to generate.
+        seed: Random seed, so every benchmark is reproducible.
+        correlation: 0..1, how strongly price follows volume.
 
     Returns:
-        float: Total volume in liters.
+        list: items shaped like items.json entries, with a 'volume' attached.
     """
-    id_to_item = {item["name"]: item for item in items_data}
-    return sum(id_to_item[item_id]["volume"] for item_id in selected_ids if item_id in id_to_item)
+    rng = random.Random(seed)
+    items = []
+    for k in range(1, count + 1):
+        volume = round(rng.uniform(0.3, 30.0), 2)
+        independent = rng.uniform(20.0, 120.0)
+        correlated = 4.0 * volume + rng.uniform(-2.0, 2.0)
+        price = max(1, round((1.0 - correlation) * independent + correlation * correlated))
+        items.append({'name': f'G{k}', 'price': price, 'volume': volume})
+    return items
 
-# --- Helper function for JSON loading ---
-def load_json_data(file_path: str):
+
+def _solver_worker(queue, name, items_data, capacity, precision):
+    """Subprocess target for --timeout runs: measure, then report back."""
+    start = time.perf_counter()
+    result = SOLVERS[name](items_data, capacity, precision)
+    elapsed = time.perf_counter() - start
+
+    tracemalloc.start()
+    SOLVERS[name](items_data, capacity, precision)
+    _, peak_bytes = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    queue.put((result, elapsed, peak_bytes))
+
+
+def run_solver(name: str, items_data: list, capacity: float, precision: int,
+               timeout: float = 0.0) -> dict:
     """
-    Loads JSON data from a specified file path with robust error handling.
+    Runs one solver, measures time and peak memory, and verifies that the
+    returned selection is consistent with the returned total price.
 
-    Args:
-        file_path (str): The path to the JSON file.
+    Time and memory are measured in two separate runs, because tracemalloc slows
+    the pure-Python solvers down ~50x and would distort the timings. With
+    timeout > 0 the solver runs in a subprocess and is killed when the wall-clock
+    budget is exceeded.
 
     Returns:
-        dict or list: The loaded JSON data.
-
-    Raises:
-        FileNotFoundError: If the file does not exist.
-        json.JSONDecodeError: If the file content is not valid JSON.
-        Exception: For any other unexpected errors during file operations.
+        dict: benchmark row; 'status' is 'ok' or 'timeout'.
     """
-    try:
-        # Using utf-8 encoding for broader compatibility with various JSON files
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        print(f"Successfully loaded data from '{file_path}'")
-        return data
-    except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
-        print(f"Please ensure '{file_path}' exists in the same directory as the script, or provide its full path.")
-        raise # Re-raise the exception to be caught in the main block for graceful exit
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{file_path}'.")
-        print("Please check the file's content for valid JSON format (e.g., missing commas, unescaped quotes).")
-        raise # Re-raise the exception
-    except Exception as e:
-        print(f"An unexpected error occurred while trying to load '{file_path}': {e}")
-        raise # Re-raise the exception
+    if timeout > 0:
+        ctx = multiprocessing.get_context('spawn')
+        queue = ctx.Queue()
+        process = ctx.Process(target=_solver_worker,
+                              args=(queue, name, items_data, capacity, precision))
+        process.start()
+        process.join(timeout)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            print(f"\n{name}:")
+            print(f"  TIMEOUT: did not finish within {timeout:.0f} sec")
+            return {'name': name, 'status': 'timeout', 'price': None, 'seconds': None,
+                    'volume': None, 'peak_mb': None, 'consistent': None, 'selected': []}
+        try:
+            result, elapsed, peak_bytes = queue.get(timeout=5)
+        except Exception:
+            print(f"\n{name}:")
+            print(f"  ERROR: solver subprocess exited without a result (exit code {process.exitcode})")
+            return {'name': name, 'status': 'timeout', 'price': None, 'seconds': None,
+                    'volume': None, 'peak_mb': None, 'consistent': None, 'selected': []}
+    else:
+        start = time.perf_counter()
+        result = SOLVERS[name](items_data, capacity, precision)
+        elapsed = time.perf_counter() - start
+
+        tracemalloc.start()
+        SOLVERS[name](items_data, capacity, precision)
+        _, peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+    selected = result['selected_items']
+    id_to_item = {item['name']: item for item in items_data}
+    selection_price = sum(id_to_item[s]['price'] for s in selected)
+    selection_volume = sum(id_to_item[s]['volume'] for s in selected)
+    consistent = math.isclose(selection_price, result['total_price'], rel_tol=0.0, abs_tol=1e-6)
+
+    print(f"\n{name}:")
+    print(f"  Max Price: {result['total_price']:.2f} EUR")
+    print(f"  Time: {elapsed:.3f} sec")
+    print(f"  Peak Memory: {peak_bytes / 1024 / 1024:.2f} MB")
+    print(f"  Total Volume: {selection_volume:.2f}L / {capacity}L")
+    print(f"  Items ({len(selected)}): {selected}")
+    if not consistent:
+        print(f"  WARNING: selection adds up to {selection_price:.2f} EUR, "
+              f"not the reported {result['total_price']:.2f} EUR — solver bug!")
+    if selection_volume > capacity + 1e-9:
+        print(f"  WARNING: selection exceeds the capacity by {selection_volume - capacity:.4f}L!")
+
+    return {
+        'name': name,
+        'status': 'ok',
+        'price': result['total_price'],
+        'seconds': elapsed,
+        'volume': selection_volume,
+        'peak_mb': peak_bytes / 1024 / 1024,
+        'consistent': consistent,
+        'selected': selected,
+    }
 
 
-# --- Part 1: Bayesian Estimation for Item Volumes ---
-
-def estimate_individual_item_volumes_bayesian(packages_data: list, all_item_ids: list) -> dict:
-    """
-    Estimates the true volume for each individual item using Bayesian linear regression.
-    
-    Args:
-        packages_data: List of dictionaries from packages.json.
-        all_item_ids: A sorted list of all unique item IDs present across both datasets,
-                      which defines the order of the unknown volume vector V.
-    
-    Returns:
-        A dictionary mapping item_id to its estimated volume (posterior mean).
-    """
-    if not packages_data:
-        print("Warning: packages.json is empty. Cannot perform Bayesian estimation. Using prior mean for all items.")
-        # Fallback: if no package data, return prior mean for all items
-        prior_mean_volume = 5.0 # A reasonable default if no data
-        return {item_id: prior_mean_volume for item_id in all_item_ids}
-
-    # Map item IDs to column indices for the design matrix A
-    item_id_to_idx = {item_id: i for i, item_id in enumerate(all_item_ids)}
-    num_unique_items = len(all_item_ids)
-    num_packages = len(packages_data)
-
-    # Known measurement error variance for the total_volume of a package
-    # The problem states error variance = 2
-    measurement_error_variance = 2.0 
-
-    # --- Construct the Design Matrix A and Observation Vector P ---
-    # P: Vector of observed total_volumes (y in y = Ax + epsilon)
-    P = np.array([pkg['total_volume'] for pkg in packages_data]).reshape(-1, 1) # Ensure P is a column vector
-
-    # A: Design matrix (num_packages x num_unique_items)
-    A = np.zeros((num_packages, num_unique_items))
-    for i, pkg in enumerate(packages_data):
-        for item_id in pkg['items']:
-            if item_id in item_id_to_idx: # Only include items we are tracking
-                A[i, item_id_to_idx[item_id]] = 1.0
-
-    # --- Define Prior Parameters for item volumes V (mu_0, Sigma_0) ---
-    # Assuming an independent Normal prior for each item's volume V_j ~ N(mu_prior, sigma_prior_squared)
-    
-    # Estimate a global average item volume from the package data for a more informed prior.
-    avg_items_per_package = np.mean([len(p['items']) for p in packages_data]) if packages_data else 1.0
-    avg_volume_per_package = np.mean(P) if P.size > 0 else 5.0 # Default if no data
-    
-    mu_prior = avg_volume_per_package / avg_items_per_package if avg_items_per_package > 0 else 5.0
-    mu_prior = max(0.1, mu_prior) # Ensure prior mean is positive and not too small
-
-    sigma_prior_squared = 100.0 # Large prior variance indicating high uncertainty initially
-
-    # mu_0: Vector of prior means for V (each element is mu_prior)
-    mu_0 = np.full((num_unique_items, 1), mu_prior)
-
-    # Sigma_0: Covariance matrix for prior (diagonal matrix with sigma_prior_squared on diagonal)
-    Sigma_0 = np.diag(np.full(num_unique_items, sigma_prior_squared))
-
-    print(f"--- Bayesian Estimation of Individual Item Volumes ---")
-    print(f"  Number of unique items to estimate: {num_unique_items}")
-    print(f"  Number of package observations: {num_packages}")
-    print(f"  Assumed measurement error variance (sigma_epsilon^2): {measurement_error_variance}")
-    print(f"  Prior for each item volume: N(mean={mu_prior:.2f}, variance={sigma_prior_squared})")
-
-    # --- Calculate Posterior Parameters for V (mu_N, Sigma_N) ---
-    A_T = A.T
-    Sigma_0_inv = np.linalg.inv(Sigma_0)
-
-    try:
-        Sigma_N_inv = (A_T @ A / measurement_error_variance) + Sigma_0_inv
-        Sigma_N = np.linalg.inv(Sigma_N_inv)
-        mu_N = Sigma_N @ ((A_T @ P / measurement_error_variance) + (Sigma_0_inv @ mu_0))
-    except np.linalg.LinAlgError as e:
-        print(f"Error: Linear algebra error during Bayesian estimation: {e}")
-        print("This might indicate that the system of equations is underdetermined (not enough unique package data).")
-        print("Falling back to prior mean for all items and exiting.")
-        # If estimation fails, it's better to exit as results would be unreliable.
-        raise RuntimeError("Failed to estimate item volumes due to linear algebra error.")
-    
-    # Map posterior means back to item IDs
-    estimated_volumes = {}
-    for i, item_id in enumerate(all_item_ids):
-        # Ensure estimated volumes are non-negative, as real volumes can't be negative.
-        # Clip at a small positive value to avoid issues with zero volume in calculations like value/volume ratio.
-        estimated_volumes[item_id] = max(0.01, mu_N[i, 0]) 
-
-    print("\n  Estimated Volume (Posterior Mean) for each item:")
-    for item_id, vol in estimated_volumes.items():
-        print(f"    {item_id}: {vol:.2f} liters")
-    print(f"  (Note: Items only in items.json, not packages.json, will have volumes based primarily on the prior mean.)")
-    
-    return estimated_volumes
-
-# --- Main Execution ---
-if __name__ == "__main__":
-    # Define backpack capacity
-    BACKPACK_CAPACITY = 1000.0 # liters
-
-    # --- Step 1: Load Data ---
-    packages_file = 'packages.json'
-    items_file = 'items.json'
-
-    try:
-        packages_data = load_json_data(packages_file)
-        items_data = load_json_data(items_file)
-    except (FileNotFoundError, json.JSONDecodeError, RuntimeError) as e:
-        # Exit if any loading or initial estimation error occurs
-        print(f"Exiting due to data loading or initial estimation error.")
-        exit()
-    except Exception as e: # Catch any other unforeseen exceptions
-        print(f"An unexpected error occurred during initial setup: {e}")
-        exit()
-
-
-    # --- Collect all unique item IDs ---
-    # We need to estimate volumes for all items that might exist, either in packages or in items.json
-    all_unique_item_ids = set()
-    for item in items_data:
-        all_unique_item_ids.add(item['name'])
-    for pkg in packages_data:
-        for item_id in pkg['items']:
-            all_unique_item_ids.add(item_id)
-    
-    # Convert to a sorted list for consistent indexing in numpy arrays
-    all_unique_item_ids_list = sorted(list(all_unique_item_ids))
-    print(f"\nDiscovered {len(all_unique_item_ids_list)} unique item IDs across both datasets.")
-
-    # --- Step 2: Bayesian Estimation of Individual Item Volumes ---
-    try:
-        estimated_volumes_dict = estimate_individual_item_volumes_bayesian(packages_data, all_unique_item_ids_list)
-    except RuntimeError as e: # Catch the specific runtime error from estimation failure
-        print(f"Exiting due to Bayesian estimation error: {e}")
-        exit()
-
-    # Assign the estimated volume to each item in the items_data list.
-    for item in items_data:
-        item_id = item['name']
-        item['volume'] = estimated_volumes_dict.get(item_id, 0.01) # Default to 0.01 if not estimated (should not happen with all_unique_item_ids_list)
-        
-        # Also pre-calculate value_per_volume for sorting (useful for pruning)
-        if item['volume'] == 0: # Avoid division by zero, treat 0 volume items as extremely high value density
-            item['value_per_volume'] = float('inf') if item['price'] > 0 else 0
+def print_summary(rows: list, capacity: float, timeout: float = 0.0) -> None:
+    print(f"\n--- Summary (capacity {capacity}L) ---")
+    print(f"| {'Algorithm':<16} | {'Max Price (EUR)':>15} | {'Time (sec)':>10} | "
+          f"{'Volume (L)':>10} | {'Peak Mem (MB)':>13} | {'Consistent':>10} |")
+    print(f"|{'-' * 18}|{'-' * 17}|{'-' * 12}|{'-' * 12}|{'-' * 15}|{'-' * 12}|")
+    for row in rows:
+        if row['status'] == 'timeout':
+            print(f"| {row['name']:<16} | {'-':>15} | {f'> {timeout:.0f}':>10} | "
+                  f"{'-':>10} | {'-':>13} | {'-':>10} |")
         else:
-            item['value_per_volume'] = item['price'] / item['volume']
-    
-    # Sort items by value_per_volume in descending order for better pruning efficiency
-    items_data_sorted_for_knapsack = sorted(items_data, key=lambda x: x.get('value_per_volume', 0), reverse=True)
+            print(f"| {row['name']:<16} | {row['price']:>15.2f} | {row['seconds']:>10.3f} | "
+                  f"{row['volume']:>10.2f} | {row['peak_mb']:>13.2f} | {str(row['consistent']):>10} |")
 
 
-    # === BENCHMARKS ===
+def print_gift_details(row: dict, items_data: list, capacity: float) -> None:
+    id_to_item = {item['name']: item for item in items_data}
+    print(f"\n--- Best Gift Choices for Sergey's Birthday (via {row['name']}) ---")
+    print(f"Maximum Total Price Achieved: {row['price']:.2f} Euros")
+    if not row['selected']:
+        print("  No items selected (perhaps capacity too small or no profitable items).")
+    for item_id in row['selected']:
+        item = id_to_item[item_id]
+        print(f"  - Name: {item['name']}, Price: {item['price']:.2f}€, Est. Volume: {item['volume']:.2f}L")
+    print(f"Total Volume of Selected Items: {row['volume']:.2f} liters (Max Capacity: {capacity}L)")
+
+
+def warn_if_dp_blowup(algorithm_names: list, item_count: int, capacity: float, precision: int) -> None:
+    """The DP cost is n * capacity * 10^precision cells; warn before it explodes."""
+    int_capacity = int(capacity * 10 ** precision)
+    if any(name.startswith('dp') for name in algorithm_names) and item_count * int_capacity > 5 * 10 ** 8:
+        print(f"Warning: the DP table is {item_count} items x {int_capacity:,} capacity units — "
+              f"this can take a lot of time/memory. Consider a lower --precision or --capacity.")
+
+
+def cmd_solve(args) -> None:
+    items_data = prepare_items(args.items, args.packages, verbose=args.verbose)
+    warn_if_dp_blowup([args.algorithm], len(items_data), args.capacity, args.precision)
+    row = run_solver(args.algorithm, items_data, args.capacity, args.precision)
+    print_gift_details(row, items_data, args.capacity)
+
+
+def cmd_benchmark(args) -> None:
+    if args.algorithms == 'all':
+        algorithm_names = list(SOLVERS)
+    elif args.algorithms == 'fast':
+        algorithm_names = list(FAST_SOLVERS)
+    else:
+        algorithm_names = [name.strip() for name in args.algorithms.split(',') if name.strip()]
+        unknown = [name for name in algorithm_names if name not in SOLVERS]
+        if unknown:
+            sys.exit(f"Unknown algorithm(s): {', '.join(unknown)}. Choose from: {', '.join(SOLVERS)}.")
+
+    if args.generate:
+        if not 0.0 <= args.correlation <= 1.0:
+            sys.exit("--correlation must be between 0 and 1.")
+        items_data = generate_items(args.generate, args.seed, args.correlation)
+        print(f"Generated {len(items_data)} synthetic items "
+              f"(seed {args.seed}, correlation {args.correlation}).")
+    else:
+        items_data = prepare_items(args.items, args.packages, verbose=args.verbose)
+
+    if 'backtracking' in algorithm_names and args.timeout <= 0 and (args.capacity > 50 or len(items_data) > 100):
+        print("Warning: the original backtracking grows exponentially at this size; "
+              "consider --timeout to keep the benchmark bounded.")
+    warn_if_dp_blowup(algorithm_names, len(items_data), args.capacity, args.precision)
+
     print(f"\n--- Benchmarking Algorithms ---")
+    print(f"Backpack Capacity: {args.capacity} liters")
+    print(f"Number of items to consider: {len(items_data)}")
 
-    # Dynamic Programming with discretized volumes
-    tracemalloc.start()
-    start_dp = time.perf_counter()
+    rows = [run_solver(name, items_data, args.capacity, args.precision, args.timeout)
+            for name in algorithm_names]
+    print_summary(rows, args.capacity, args.timeout)
 
-    dp_result = solve_knapsack_dp_discretized(
-        items_list=items_data_sorted_for_knapsack,
-        capacity=BACKPACK_CAPACITY,
-        precision=2
+
+def main(argv=None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Estimate item volumes from noisy package data, then pick the most "
+                    "valuable set of gifts that fits in the backpack (0/1 knapsack)."
     )
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument('--capacity', type=float, default=40.0,
+                        help="Backpack capacity in liters (default: 40, the original problem).")
+    common.add_argument('--precision', type=int, default=2,
+                        help="Decimal places kept when discretizing volumes for the DP solvers (default: 2).")
+    common.add_argument('--items', default=os.path.join(REPO_DIR, 'items.json'),
+                        help="Path to items.json.")
+    common.add_argument('--packages', default=os.path.join(REPO_DIR, 'packages.json'),
+                        help="Path to packages.json.")
+    common.add_argument('--verbose', action='store_true',
+                        help="Print the full volume estimation details.")
 
-    end_dp = time.perf_counter()
-    current_mem_dp, peak_mem_dp = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
-    print(f"\nDynamic Programming (discretized):")
-    print(f"  Max Price: {dp_result['total_price']:.2f} EUR")
-    print(f"  Time: {end_dp - start_dp:.3f} sec")
-    print(f"  Items: {dp_result['selected_items']}")
-    volume_dp = calculate_total_volume(items_data, dp_result['selected_items'])
-    print(f"  Total Volume: {volume_dp:.2f}L / {BACKPACK_CAPACITY}L")
-    print(f"  Memory Usage: Current = {current_mem_dp / 1024:.2f} KB; Peak = {peak_mem_dp / 1024:.2f} KB")
+    parser_solve = subparsers.add_parser(
+        'solve', parents=[common],
+        help="Answer the actual question: the best gift set for the data.")
+    parser_solve.add_argument('--algorithm', default='branch-and-bound', choices=list(SOLVERS),
+                              help="Solver to use (default: branch-and-bound).")
+    parser_solve.set_defaults(func=cmd_solve)
 
-    # Dynamic Programming with discretized volumes (memory optimized)
-    tracemalloc.start()
-    start_dp_opt = time.perf_counter()
+    parser_benchmark = subparsers.add_parser(
+        'benchmark', parents=[common],
+        help="Compare solvers on the real data or on generated instances.")
+    parser_benchmark.add_argument('--algorithms', default='fast',
+                                  help="Comma-separated subset of: " + ", ".join(SOLVERS) + ". "
+                                       "'fast' (default) skips the original backtracking, 'all' includes it.")
+    parser_benchmark.add_argument('--timeout', type=float, default=0.0,
+                                  help="Per-solver wall-clock budget in seconds; a solver exceeding it "
+                                       "is killed and reported as timeout (default: 0 = no limit).")
+    parser_benchmark.add_argument('--generate', type=int, default=0, metavar='N',
+                                  help="Benchmark on N generated items instead of the real data.")
+    parser_benchmark.add_argument('--seed', type=int, default=0,
+                                  help="Random seed for --generate (default: 0).")
+    parser_benchmark.add_argument('--correlation', type=float, default=0.0,
+                                  help="0..1, how strongly generated prices follow volumes; "
+                                       "1 is the hard case for branch and bound (default: 0).")
+    parser_benchmark.set_defaults(func=cmd_benchmark)
 
-    dp_opt_result = solve_knapsack_dp_discretized_memory_optimized(
-        items_list=items_data_sorted_for_knapsack,
-        capacity=BACKPACK_CAPACITY,
-        precision=2
-    )
+    args = parser.parse_args(argv)
+    try:
+        args.func(args)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        sys.exit(f"Exiting: {e}")
 
-    end_dp_opt = time.perf_counter()
-    current_mem_opt, peak_mem_opt = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
 
-    print(f"\nDynamic Programming (optimized):")
-    print(f"  Max Price: {dp_opt_result['total_price']:.2f} EUR")
-    print(f"  Time: {end_dp_opt - start_dp_opt:.3f} sec")
-    print(f"  Items: {dp_opt_result['selected_items']}")
-    volume_dp_opt = calculate_total_volume(items_data, dp_opt_result['selected_items'])
-    print(f"  Total Volume: {volume_dp_opt:.2f}L / {BACKPACK_CAPACITY}L")
-    print(f"  Memory Usage: Current = {current_mem_opt / 1024:.2f} KB; Peak = {peak_mem_opt / 1024:.2f} KB")
+if __name__ == "__main__":
+    main()

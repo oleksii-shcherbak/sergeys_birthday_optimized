@@ -1,10 +1,10 @@
-def solve_knapsack_branch_and_bound(items_list, capacity):
+def solve(items_list, capacity):
     """
     Solves the 0/1 Knapsack problem exactly on the original float volumes
     (no discretization) using depth-first branch and bound. Items are considered
     in decreasing price/volume density order, and subtrees are pruned with the
     fractional (LP relaxation) upper bound, so most of the search tree is never
-    visited. See backtracking_solver.py for the original algorithm this improves on.
+    visited. See backtracking.py for the original algorithm this improves on.
 
     Args:
         items_list (list): List of items (dicts with 'name', 'price', 'volume').

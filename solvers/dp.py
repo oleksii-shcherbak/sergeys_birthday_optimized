@@ -1,9 +1,12 @@
-import math
+from .discretization import discretize
 
 
-def solve_knapsack_dp_discretized(items_list, capacity, precision=2):
+def solve(items_list, capacity, precision=2):
     """
-    Solves the 0/1 Knapsack problem using Dynamic Programming with discretized volumes.
+    Solves the 0/1 Knapsack problem using Dynamic Programming with discretized
+    volumes: a 1D value array plus a full n x C keep-matrix for reconstructing
+    the selection. Simple and exact, but the keep-matrix makes it the most
+    memory-hungry solver here.
 
     Args:
         items_list (list): List of items (dicts with 'name', 'price', 'volume').
@@ -16,31 +19,23 @@ def solve_knapsack_dp_discretized(items_list, capacity, precision=2):
             'selected_items': list[str]
         }
     """
-    scale = 10 ** precision
-    int_capacity = int(math.floor(capacity * scale + 1e-9))
+    int_capacity, weights, prices, names = discretize(items_list, capacity, precision)
     n = len(items_list)
 
-    # Round volumes UP and the capacity DOWN: rounding to nearest can select a set
-    # whose true volume slightly exceeds the capacity. The 1e-9 guard absorbs float
-    # noise like 8.0 * 100 == 800.0000000000002.
-    weights = [int(math.ceil(item['volume'] * scale - 1e-9)) for item in items_list]
-    prices = [item['price'] for item in items_list]
-    names = [item['name'] for item in items_list]
-
-    # Initialize DP table
     dp = [0] * (int_capacity + 1)
-    keep = [ [-1] * (int_capacity + 1) for _ in range(n) ]
+    keep = [[-1] * (int_capacity + 1) for _ in range(n)]
 
     for i in range(n):
         w = weights[i]
+        if w > int_capacity:
+            continue
         p = prices[i]
         for c in range(int_capacity, w - 1, -1):
             if dp[c - w] + p > dp[c]:
                 dp[c] = dp[c - w] + p
                 keep[i][c] = c - w
 
-    # Find max value and trace items
-    c = max(range(int_capacity + 1), key=lambda x: dp[x])
+    c = dp.index(max(dp))
     max_value = dp[c]
     selected = []
 

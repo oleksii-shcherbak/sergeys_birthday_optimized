@@ -9,22 +9,11 @@ import pytest
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_DIR)
 
-from backtracking_solver import solve_knapsack_backtracking
-from branch_and_bound_solver import solve_knapsack_branch_and_bound
-from dp_solver import solve_knapsack_dp_discretized
-from dp_solver_memory_optimized import solve_knapsack_dp_discretized_memory_optimized
-from dp_solver_numpy import solve_knapsack_dp_numpy
-
 # All solvers share the (items, capacity, precision) interface here.
 # The two float-volume solvers ignore precision. The original backtracking is
 # exact too, just exponential, so on small instances it goes through the same checks.
-ALL_SOLVERS = {
-    'backtracking': lambda items, cap, precision: solve_knapsack_backtracking(items, cap),
-    'branch-and-bound': lambda items, cap, precision: solve_knapsack_branch_and_bound(items, cap),
-    'dp': solve_knapsack_dp_discretized,
-    'dp-optimized': solve_knapsack_dp_discretized_memory_optimized,
-    'dp-numpy': solve_knapsack_dp_numpy,
-}
+from solvers import SOLVERS as ALL_SOLVERS
+from solvers import dp_numpy
 
 DP_SOLVERS = ['dp', 'dp-optimized', 'dp-numpy']
 
@@ -149,17 +138,12 @@ def test_real_data_all_solvers_agree():
     The original backtracking is excluded here: it needs ~80 sec on this input
     (that is the point of branch and bound), which is too slow for CI.
     """
-    from solve_knapsack import estimate_individual_item_volumes_bayesian, load_json_data
+    from estimation import prepare_items
 
-    packages_data = load_json_data(os.path.join(REPO_DIR, 'packages.json'))
-    items_data = load_json_data(os.path.join(REPO_DIR, 'items.json'))
-    all_ids = {item['name'] for item in items_data}
-    for pkg in packages_data:
-        all_ids.update(pkg['items'])
-    estimated = estimate_individual_item_volumes_bayesian(packages_data, sorted(all_ids))
-    for item in items_data:
-        item['volume'] = estimated.get(item['name'], 0.01)
-
+    items_data = prepare_items(
+        os.path.join(REPO_DIR, 'items.json'),
+        os.path.join(REPO_DIR, 'packages.json'),
+    )
     capacity = 40.0
     results = {name: solver(items_data, capacity, 2)
                for name, solver in ALL_SOLVERS.items() if name != 'backtracking'}
@@ -170,9 +154,34 @@ def test_real_data_all_solvers_agree():
     # The three DP variants share the same discretization: identical optima.
     assert math.isclose(results['dp']['total_price'], results['dp-optimized']['total_price'])
     assert math.isclose(results['dp']['total_price'], results['dp-numpy']['total_price'])
-    # Branch and bound solves the exact float problem. DP solves the ceiling-rounded one,
-    # whose feasible sets are a subset. So DP can never exceed branch and bound.
+    # Branch and bound solves the exact float problem; DP solves the ceiling-rounded
+    # one, whose feasible sets are a subset. So DP can never exceed branch and bound.
     assert results['dp']['total_price'] <= results['branch-and-bound']['total_price'] + 1e-6
     # At a finer discretization the DP recovers the exact optimum on this data.
-    fine = solve_knapsack_dp_numpy(items_data, capacity, 3)
+    fine = dp_numpy.solve(items_data, capacity, 3)
     assert math.isclose(fine['total_price'], results['branch-and-bound']['total_price'])
+
+
+def test_generator_is_deterministic():
+    from solve_knapsack import generate_items
+
+    a = generate_items(50, seed=7, correlation=0.5)
+    b = generate_items(50, seed=7, correlation=0.5)
+    c = generate_items(50, seed=8, correlation=0.5)
+    assert a == b
+    assert a != c
+    assert all(item['price'] >= 1 and 0 < item['volume'] <= 30 for item in a)
+
+
+def test_generator_correlation():
+    from solve_knapsack import generate_items
+
+    def density_spread(items):
+        densities = [item['price'] / item['volume'] for item in items]
+        return max(densities) / min(densities)
+
+    independent = generate_items(200, seed=1, correlation=0.0)
+    correlated = generate_items(200, seed=1, correlation=1.0)
+    # At correlation 1 all price/volume densities collapse towards a constant,
+    # which is exactly what makes branch and bound struggle.
+    assert density_spread(correlated) < 3.0 < density_spread(independent)

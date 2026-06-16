@@ -1,11 +1,12 @@
-import math
+from .discretization import discretize
 
 
-def solve_knapsack_dp_discretized_memory_optimized(items_list, capacity, precision=2):
+def solve(items_list, capacity, precision=2):
     """
-    Solves the 0/1 Knapsack problem using Dynamic Programming with discretized volumes.
-    Optimized for space complexity: a 1D value array plus one selection bitmask
-    per capacity instead of a full n x C keep-matrix.
+    Solves the 0/1 Knapsack problem using Dynamic Programming with discretized
+    volumes. Optimized for space: a 1D value array plus one selection bitmask
+    per capacity (O(C * n/64) memory) instead of the O(n * C) keep-matrix
+    used by dp.py.
 
     Args:
         items_list (list): List of items (dicts with 'name', 'price', 'volume').
@@ -18,21 +19,14 @@ def solve_knapsack_dp_discretized_memory_optimized(items_list, capacity, precisi
             'selected_items': list[str]
         }
     """
-    scale = 10 ** precision
-    int_capacity = int(math.floor(capacity * scale + 1e-9))
+    int_capacity, weights, prices, names = discretize(items_list, capacity, precision)
     n = len(items_list)
-
-    # Round volumes UP and the capacity DOWN, so the returned selection is
-    # guaranteed to truly fit (see the same logic in dp_solver.py).
-    weights = [int(math.ceil(item['volume'] * scale - 1e-9)) for item in items_list]
-    prices = [item['price'] for item in items_list]
-    names = [item['name'] for item in items_list]
 
     dp = [0.0] * (int_capacity + 1)
     # selection[c] is the exact set of items achieving dp[c], as a bitmask (bit i = item i).
-    # The previous version stored only the last item that improved dp[c] and walked those
-    # pointers backwards; that breaks when a later item overwrites a cell that an earlier
-    # chain passed through, so the reported items could disagree with the reported price.
+    # Storing the full set per cell keeps the reconstruction consistent with dp; a single
+    # "last item that improved dp[c]" pointer is not enough, because a later item can
+    # overwrite a cell that an earlier chain passed through.
     selection = [0] * (int_capacity + 1)
 
     for i in range(n):

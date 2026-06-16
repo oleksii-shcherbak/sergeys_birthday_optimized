@@ -1,9 +1,9 @@
-import math
-
 import numpy as np
 
+from .discretization import discretize
 
-def solve_knapsack_dp_numpy(items_list, capacity, precision=2):
+
+def solve(items_list, capacity, precision=2):
     """
     Solves the 0/1 Knapsack problem using Dynamic Programming with discretized
     volumes, vectorized with NumPy: each item is processed as one vectorized pass
@@ -21,14 +21,9 @@ def solve_knapsack_dp_numpy(items_list, capacity, precision=2):
             'selected_items': list[str]
         }
     """
-    scale = 10 ** precision
-    int_capacity = int(math.floor(capacity * scale + 1e-9))
+    int_capacity, weights, prices, names = discretize(items_list, capacity, precision)
+    prices = [float(p) for p in prices]
     n = len(items_list)
-
-    # Same conservative rounding as the other DP solvers: volumes up, capacity down.
-    weights = [int(math.ceil(item['volume'] * scale - 1e-9)) for item in items_list]
-    prices = [float(item['price']) for item in items_list]
-    names = [item['name'] for item in items_list]
 
     dp = np.zeros(int_capacity + 1, dtype=np.float64)
     keep = np.zeros((n, int_capacity + 1), dtype=bool)
