@@ -4,35 +4,10 @@ import numpy as np
 
 
 def load_json_data(file_path: str):
-    """
-    Loads JSON data from a specified file path with robust error handling.
-
-    Args:
-        file_path (str): The path to the JSON file.
-
-    Returns:
-        dict or list: The loaded JSON data.
-
-    Raises:
-        FileNotFoundError: If the file does not exist.
-        json.JSONDecodeError: If the file content is not valid JSON.
-        Exception: For any other unexpected errors during file operations.
-    """
-    try:
-        # Using utf-8 encoding for broader compatibility with various JSON files
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
-        print(f"Please ensure '{file_path}' exists, or provide its full path.")
-        raise
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{file_path}'.")
-        print("Please check the file's content for valid JSON format (e.g., missing commas, unescaped quotes).")
-        raise
-    except Exception as e:
-        print(f"An unexpected error occurred while trying to load '{file_path}': {e}")
-        raise
+    """Load JSON from a file. FileNotFoundError / JSONDecodeError propagate to the
+    caller; the CLI turns them into a clean 'Exiting: ...' message in main()."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 def estimate_individual_item_volumes_bayesian(packages_data: list, all_item_ids: list,
@@ -97,7 +72,7 @@ def estimate_individual_item_volumes_bayesian(packages_data: list, all_item_ids:
     Sigma_0 = np.diag(np.full(num_unique_items, sigma_prior_squared))
 
     if verbose:
-        print(f"--- Bayesian Estimation of Individual Item Volumes ---")
+        print("--- Bayesian Estimation of Individual Item Volumes ---")
         print(f"  Number of unique items to estimate: {num_unique_items}")
         print(f"  Number of package observations: {num_packages}")
         print(f"  Assumed measurement error variance (sigma_epsilon^2): {measurement_error_variance}")
@@ -127,7 +102,7 @@ def estimate_individual_item_volumes_bayesian(packages_data: list, all_item_ids:
         print("\n  Estimated Volume (Posterior Mean) for each item:")
         for item_id, vol in estimated_volumes.items():
             print(f"    {item_id}: {vol:.2f} liters")
-        print(f"  (Note: Items only in items.json, not packages.json, will have volumes based primarily on the prior mean.)")
+        print("  (Note: Items only in items.json, not packages.json, will have volumes based primarily on the prior mean.)")
 
     return estimated_volumes
 

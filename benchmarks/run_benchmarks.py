@@ -62,7 +62,7 @@ def main():
             results[name].append(seconds)
             print(f"  capacity {capacity:>5} L | {name:<16} | {seconds:>9.4f} s", flush=True)
 
-    print(f"\n| Capacity (L) | " + " | ".join(f"{name} (s)" for name in FAST_SOLVERS) + " |")
+    print("\n| Capacity (L) | " + " | ".join(f"{name} (s)" for name in FAST_SOLVERS) + " |")
     print("|" + "---|" * (len(FAST_SOLVERS) + 1))
     for row, capacity in enumerate(CAPACITIES):
         cells = " | ".join(f"{results[name][row]:.4f}" for name in FAST_SOLVERS)

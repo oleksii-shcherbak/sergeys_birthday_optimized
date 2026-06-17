@@ -42,8 +42,12 @@ def generate_items(count: int, seed: int = 0, correlation: float = 0.0) -> list:
     return items
 
 
-def _solver_worker(queue, name, items_data, capacity, precision):
-    """Subprocess target for --timeout runs: measure, then report back."""
+def _measure(name, items_data, capacity, precision):
+    """Run a solver twice: once for wall-clock time, once for peak memory.
+
+    Separate runs because tracemalloc slows the pure-Python solvers ~50x and
+    would distort the timing.
+    """
     start = time.perf_counter()
     result = SOLVERS[name](items_data, capacity, precision)
     elapsed = time.perf_counter() - start
@@ -53,19 +57,21 @@ def _solver_worker(queue, name, items_data, capacity, precision):
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    queue.put((result, elapsed, peak_bytes))
+    return result, elapsed, peak_bytes
+
+
+def _solver_worker(queue, name, items_data, capacity, precision):
+    """Subprocess target for --timeout runs."""
+    queue.put(_measure(name, items_data, capacity, precision))
 
 
 def run_solver(name: str, items_data: list, capacity: float, precision: int,
                timeout: float = 0.0) -> dict:
     """
     Runs one solver, measures time and peak memory, and verifies that the
-    returned selection is consistent with the returned total price.
-
-    Time and memory are measured in two separate runs, because tracemalloc slows
-    the pure-Python solvers down ~50x and would distort the timings. With
-    timeout > 0 the solver runs in a subprocess and is killed when the wall-clock
-    budget is exceeded.
+    returned selection is consistent with the returned total price. With
+    timeout > 0 the solver runs in a subprocess and is killed when the
+    wall-clock budget is exceeded.
 
     Returns:
         dict: benchmark row; 'status' is 'ok' or 'timeout'.
@@ -92,14 +98,7 @@ def run_solver(name: str, items_data: list, capacity: float, precision: int,
             return {'name': name, 'status': 'timeout', 'price': None, 'seconds': None,
                     'volume': None, 'peak_mb': None, 'consistent': None, 'selected': []}
     else:
-        start = time.perf_counter()
-        result = SOLVERS[name](items_data, capacity, precision)
-        elapsed = time.perf_counter() - start
-
-        tracemalloc.start()
-        SOLVERS[name](items_data, capacity, precision)
-        _, peak_bytes = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        result, elapsed, peak_bytes = _measure(name, items_data, capacity, precision)
 
     selected = result['selected_items']
     id_to_item = {item['name']: item for item in items_data}
@@ -197,7 +196,7 @@ def cmd_benchmark(args) -> None:
               "consider --timeout to keep the benchmark bounded.")
     warn_if_dp_blowup(algorithm_names, len(items_data), args.capacity, args.precision)
 
-    print(f"\n--- Benchmarking Algorithms ---")
+    print("\n--- Benchmarking Algorithms ---")
     print(f"Backpack Capacity: {args.capacity} liters")
     print(f"Number of items to consider: {len(items_data)}")
 
